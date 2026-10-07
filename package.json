@@ -1,7 +1,7 @@
 {
   "name": "ibkr-mcp-guard",
-  "version": "0.1.0",
-  "description": "Unofficial local MCP server that connects to Interactive Brokers' official MCP server through a safety guard: read-only plus order drafts, never order submission.",
+  "version": "0.2.0",
+  "description": "Unofficial local MCP server that connects to Interactive Brokers' official MCP server through a safety guard: read-only plus order drafts, never order submission (optional paper-trading mode: IBKR paper accounts only).",
   "type": "module",
   "bin": {
     "ibkr-mcp-guard": "server/index.mjs"

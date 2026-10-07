@@ -120,3 +120,52 @@ test('stdio: with elicitation, a draft is confirmed by the client before it is s
     await up.close();
   }
 });
+
+test('stdio paper mode: the sign-in asks for orders.submit; a submit reaches only an all-paper session and is logged', async () => {
+  let ids = ['DU1234567'];
+  const paperTools = [...tools, { name: 'cancel_order', description: 'd', inputSchema: { type: 'object' } }];
+  const up = await startFakeUpstream({
+    tools: paperTools,
+    scope: 'openid account-ids mcp.read mcp.write mcp.orders.submit',
+    onCall: p => (/^get_account_/.test(p.name)
+      ? { content: [{ type: 'text', text: JSON.stringify({ accounts: ids.map(id => ({ accountId: id })) }) }] }
+      : { content: [{ type: 'text', text: 'upstream:' + p.name }] }),
+  });
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'ibkr-guard-e2e-'));
+  const s = startServer({ IBKR_MCP_GUARD_UPSTREAM: up.url, IBKR_MCP_GUARD_STORE: 'file', IBKR_MCP_GUARD_NO_BROWSER: '1', CLAUDE_PLUGIN_DATA: data, IBKR_MCP_GUARD_PAPER: '1', IBKR_MCP_GUARD_READONLY: '' });
+  try {
+    const init = await s.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+    assert.match(init.result.instructions, /PAPER MODE/);
+    s.notify('notifications/initialized');
+    const r = await s.rpc('tools/call', { name: 'ibkr_sign_in', arguments: {} });
+    const auth = new URL(/(http:\/\/127\.0\.0\.1:\d+\/authorize\?\S+)/.exec(r.result.content[0].text)[1]);
+    assert.equal(auth.searchParams.get('scope'), 'openid account-ids mcp.read mcp.write mcp.orders.submit');
+    assert.equal(up.auth.registrations[0].scope, 'openid account-ids mcp.read mcp.write mcp.orders.submit');
+    await fetch(auth.searchParams.get('redirect_uri') + '?code=abc&state=' + auth.searchParams.get('state'));
+    assert.ok(await waitFor(() => s.notifications.some(n => n.method === 'notifications/tools/list_changed')));
+
+    let names = (await s.rpc('tools/list', {})).result.tools.map(t => t.name);
+    assert.ok(names.includes('place_order') && names.includes('ibkr_paper_log'));
+    const ok = await s.rpc('tools/call', { name: 'place_order', arguments: { accountId: 'DU1234567', symbol: 'AAPL', side: 'BUY', quantity: 1 } });
+    assert.equal(ok.result.content[0].text, 'upstream:place_order');
+
+    ids = ['DU1234567', 'U7654321'];
+    const no = await s.rpc('tools/call', { name: 'place_order', arguments: { symbol: 'AAPL', side: 'SELL', quantity: 1 } });
+    assert.equal(no.result.isError, true);
+    assert.equal(up.calls.filter(m => m.params?.name === 'place_order').length, 1);
+    names = (await s.rpc('tools/list', {})).result.tools.map(t => t.name);
+    assert.ok(!names.includes('place_order'));
+
+    const st = await s.rpc('tools/call', { name: 'ibkr_status', arguments: {} });
+    assert.match(st.result.content[0].text, /U7654321 \(LIVE\)/);
+    const logFile = path.join(data, 'paper-orders.log');
+    assert.equal(fs.statSync(logFile).mode & 0o777, 0o600);
+    const entries = fs.readFileSync(logFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    assert.deepEqual(entries.map(e => e.decision), ['submitted', 'refused']);
+    assert.ok(!fs.readFileSync(logFile, 'utf8').includes('test-access-token'));
+    assert.ok(!s.stderr().includes('test-access-token'));
+  } finally {
+    await s.stop();
+    await up.close();
+  }
+});

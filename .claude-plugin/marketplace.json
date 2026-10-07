@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "ibkr-mcp-guard",
-      "description": "Interactive Brokers (unofficial, guarded): read-only account and market data plus order drafts. Never submits orders.",
-      "version": "0.1.0",
+      "description": "Interactive Brokers (unofficial, guarded): read-only account and market data plus order drafts. Never submits orders to live accounts (opt-in paper-trading mode for IBKR paper accounts).",
+      "version": "0.2.0",
       "author": {
         "name": "Adam Cohen"
       },

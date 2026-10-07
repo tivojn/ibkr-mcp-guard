@@ -1,7 +1,7 @@
 {
   "name": "ibkr-mcp-guard",
-  "version": "0.1.0",
-  "description": "Interactive Brokers (unofficial, guarded): read your IBKR account and market data and create order drafts through IBKR's official MCP server. Never submits orders.",
+  "version": "0.2.0",
+  "description": "Interactive Brokers (unofficial, guarded): read your IBKR account and market data and create order drafts through IBKR's official MCP server. Never submits orders to live accounts; an opt-in paper-trading mode submits to IBKR paper accounts only.",
   "author": {
     "name": "Adam Cohen"
   },

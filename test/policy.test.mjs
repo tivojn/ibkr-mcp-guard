@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DRAFT_PREFIX, classify, decorate, requiresSubmitScope, visibleTools } from '../server/lib/policy.mjs';
+import { DRAFT_PREFIX, PAPER_PREFIX, classify, decorate, requiresSubmitScope, visibleTools } from '../server/lib/policy.mjs';
 import { REAL_TOOLS } from './helpers.mjs';
 
 test('order submission tools are blocked', () => {
@@ -68,4 +68,15 @@ test('visibleTools removes blocked tools; read-only mode removes drafts and writ
   assert.ok(!ro.includes('create_alert'));
   assert.ok(ro.includes('get_account_balances'));
   assert.ok(visibleTools(tools, { readOnly: true }).every(t => t.annotations.readOnlyHint === true));
+});
+
+test('paperSubmit lists blocked tools as paper submits; read-only and the default never do', () => {
+  const tools = ['get_account_balances', 'place_order', 'cancel_order'].map(name => ({ name, description: 'x', inputSchema: { type: 'object' } }));
+  const v = visibleTools(tools, { paperSubmit: true });
+  const place = v.find(t => t.name === 'place_order');
+  assert.ok(place.description.startsWith(PAPER_PREFIX));
+  assert.deepEqual([place.annotations.readOnlyHint, place.annotations.destructiveHint], [false, true]);
+  assert.ok(v.some(t => t.name === 'cancel_order'));
+  assert.ok(!visibleTools(tools).some(t => t.name === 'place_order'));
+  assert.ok(!visibleTools(tools, { paperSubmit: true, readOnly: true }).some(t => t.name === 'place_order'));
 });

@@ -2,6 +2,8 @@
 
 **IBKR (guarded)**: a small local MCP server that lets your AI assistant use **Interactive Brokers' official MCP server** through a safety guard. The assistant can read your account and market data and create order **drafts**. It can never send an order to the market.
 
+An opt-in [paper trading mode](#paper-trading-mode) lets the assistant submit orders to an IBKR **paper** (simulated) account, so you can test strategies. Live accounts can never receive orders.
+
 > **Unofficial.** This project is not affiliated with, endorsed by, or supported by Interactive Brokers. It connects to IBKR's official public MCP server (`https://api.ibkr.com/v1/api/mcp-public`), [announced on 28 July 2026](https://www.interactivebrokers.com/en/general/about/mediaRelations/7-28-26.php), using IBKR's own browser sign-in.
 
 - Runs locally over stdio. Needs Node.js 20 or newer and has **no npm dependencies**.
@@ -11,7 +13,7 @@
 
 | | |
 |---|---|
-| **Never requests order submission** | It asks for the scopes `openid account-ids mcp.read mcp.write` and nothing else. If code ever asks for `mcp.orders.submit`, an assertion throws, and a test checks this. If IBKR grants that scope anyway, `ibkr_status` reports it. |
+| **Never requests order submission** | It asks for the scopes `openid account-ids mcp.read mcp.write` and nothing else. If code ever asks for `mcp.orders.submit`, an assertion throws, and a test checks this. If IBKR grants that scope anyway, `ibkr_status` reports it. The only exception is the opt-in [paper trading mode](#paper-trading-mode), which you must turn on yourself. |
 | **Submit tools removed** | Any upstream tool that places, submits, transmits or executes an order, or that requires `mcp.orders.submit`, is removed from the tool list and refused if called by name. This also covers buy/sell tools, replies to order confirmations, and changes to live orders. |
 | **Drafts only** | Order *instructions* (`create_order_instruction`, `delete_order_instruction`) are IBKR's order drafts. They are listed with the warning *"Creates/changes an order DRAFT (order instruction) only — nothing is sent to the market; you approve drafts inside IBKR."* and marked `destructiveHint: true`. A draft becomes an order only when **you** approve it inside IBKR. |
 | **Asks before drafting** | If your MCP client supports [elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation), the guard asks you to Approve or Cancel each draft before sending it. Otherwise your host's own tool-approval prompt applies, which is triggered by `destructiveHint`. |
@@ -90,6 +92,7 @@ The guard's own tools work before you sign in:
 - `ibkr_sign_in` opens the browser sign-in. It returns immediately and finishes in the background, and does nothing if you are already signed in.
 - `ibkr_status` shows whether you are signed in, your account ids (if IBKR reports them), the granted scopes, when the token expires, and whether order submission was granted (it should say **no**).
 - `ibkr_sign_out` revokes the tokens at IBKR and deletes them locally.
+- `ibkr_paper_log` (only in [paper trading mode](#paper-trading-mode)) shows the latest paper-order audit entries.
 
 Before you first sign in, the tool list shows only these three tools. After that, the guard caches IBKR's tool list, so the tools still appear when you are signed out. Calling one while signed out starts a sign-in.
 
@@ -97,13 +100,71 @@ Before you first sign in, the tool list shows only these three tools. After that
 
 | Variable | Effect |
 |---|---|
-| `IBKR_MCP_GUARD_READONLY=1` | Hide and refuse write and draft tools; reads only. |
+| `IBKR_MCP_GUARD_READONLY=1` | Hide and refuse write and draft tools; reads only. Also turns paper mode off. |
+| `IBKR_MCP_GUARD_PAPER=1` | [Paper trading mode](#paper-trading-mode): order submission to IBKR **paper** accounts only. |
+| `IBKR_MCP_GUARD_PAPER_NO_CONFIRM=1` | In paper mode, skip the guard's Approve/Cancel prompt before each paper order (for automated strategy runs). Has no effect outside paper mode. |
 | `IBKR_MCP_GUARD_STORE=file` | Use the `0600` file instead of the macOS Keychain. |
 | `IBKR_MCP_GUARD_NO_BROWSER=1` | Don't open a browser; the sign-in result includes the link to open yourself (useful over SSH). |
 | `CLAUDE_PLUGIN_DATA` / `PLUGIN_DATA` | Data directory (set by plugin hosts). Otherwise `$XDG_CONFIG_HOME/ibkr-mcp-guard` or `~/.config/ibkr-mcp-guard`. |
 | `IBKR_MCP_GUARD_UPSTREAM` | Testing only: a different upstream MCP URL. A warning is logged to stderr. |
 
-The data directory holds the token file (non-macOS, or with `STORE=file`) and `tools-cache.json`, the last tool list, which contains no secrets.
+The data directory holds the token file (non-macOS, or with `STORE=file`), `tools-cache.json` (the last tool list, which contains no secrets) and, in paper mode, `paper-orders.log`.
+
+## Paper trading mode
+
+Paper trading mode is for testing strategies on an IBKR **paper trading account** through IBKR's official connector. It is **off by default**. When it is off, nothing on this page applies and the guard behaves exactly as described above.
+
+### What it does
+
+With `IBKR_MCP_GUARD_PAPER=1`:
+
+- **The sign-in also asks for order submission.** The guard requests `openid account-ids mcp.read mcp.write mcp.orders.submit`. Only this code path can ask for `mcp.orders.submit`; the default path still throws if anything asks for it.
+- **Changing modes needs a new sign-in.** Each saved sign-in remembers which scopes it was made with. If you turn paper mode on or off, the old sign-in is not used, and the guard asks you to sign in again.
+- **Order submission is gated to paper accounts.** The tools that the default mode removes (place, submit, cancel or modify orders, and so on) are allowed only when **every** account the sign-in can see is a paper account, meaning its id starts with `DU` or `DF`. Before **every** submit, the guard:
+  1. reads the account ids again from IBKR, by calling the account tools (`get_account_positions`, `get_account_balances`, `get_account_summary`, `get_account_orders` and any other read tool whose name mentions accounts) and scanning their answers for account ids;
+  2. refuses if it sees any non-paper id (`U…`, `F…`, `I…`), or if it cannot find any account id at all;
+  3. refuses if the order's arguments name an account that is not one of those paper accounts.
+
+  The result of this check is never cached. Each submit makes its own check.
+- **Submit tools are shown only while the session is paper-only.** They are listed with the description prefix *"PAPER ACCOUNT ONLY — submits a simulated order to your IBKR paper account (DU…). Refused for live accounts."* and `destructiveHint: true`. The guard checks again on every `tools/list` and after each sign-in, and sends `notifications/tools/list_changed` when the answer changes. At other times the submit tools are hidden, and they are refused if called by name.
+- **Every order is confirmed.** If your MCP client supports elicitation, the guard shows a plain read-back (account, side, quantity, symbol, order type, price if given, time in force) and asks you to Approve or Cancel. After you approve, it checks the accounts again before sending. Without elicitation, your host's own approval prompt applies, which is triggered by `destructiveHint`. For automated strategy runs, `IBKR_MCP_GUARD_PAPER_NO_CONFIRM=1` skips the guard's prompt. Even then, orders still go only to paper accounts.
+- **Every attempt is logged.** Each paper submit attempt (submitted, failed, refused or cancelled) is added as one JSON line to `paper-orders.log` in the data directory (file mode `0600`). Each line records the time, the tool, the decision and reason, the accounts seen, a read-back of the order and its arguments. Tokens are never written to the log. Use the `ibkr_paper_log` tool (optional `limit`, default 20) to see recent entries.
+- **`ibkr_status` shows the paper state:** whether paper mode is on, the accounts seen in a fresh read (each labelled paper or LIVE), whether `mcp.orders.submit` was granted, and whether submits are allowed right now and why.
+
+`IBKR_MCP_GUARD_READONLY=1` overrides paper mode: the guard does not request the submit scope and no orders are submitted.
+
+### Get a paper login
+
+1. In IBKR's Client Portal, open **Settings → Paper Trading Account**. Create (or reset) your paper account there and note its username. Paper accounts start with simulated funds, normally USD 1,000,000.
+2. When the guard opens IBKR's sign-in page, set the login page's **Live / Paper** switch to **Paper**, then sign in with the paper username.
+
+IBKR's official MCP connector does accept paper logins. A paper sign-in through this guard has been checked: the account summary showed the paper account's USD 1,000,000 net liquidation value and no positions. If you sign in with a **live** login while paper mode is on, the guard sees the live account id and refuses every submit.
+
+### Turn it on
+
+Paper mode is set by an environment variable on the MCP server, so set it in your host's server configuration.
+
+**EnConvo:** in the plugin's MCP server settings, add the environment variable `IBKR_MCP_GUARD_PAPER` with value `1` (and, if you want, `IBKR_MCP_GUARD_PAPER_NO_CONFIRM` = `1`). Then restart the server.
+
+**Claude Code:** add it as a separate MCP server with the variable set:
+
+```bash
+claude mcp add -e IBKR_MCP_GUARD_PAPER=1 ibkr-paper -- npx -y github:tivojn/ibkr-mcp-guard
+```
+
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.ibkr-paper]
+command = "npx"
+args = ["-y", "github:tivojn/ibkr-mcp-guard"]
+env = { IBKR_MCP_GUARD_PAPER = "1" }
+startup_timeout_sec = 60
+```
+
+After you turn it on, ask the assistant to **"sign in to IBKR"**, sign in with your **paper** login, and then run `ibkr_status`. It should show your `DU…` account labelled *paper* and *"Paper order submission allowed now: yes"*.
+
+> Paper trading is simulated. Paper fills, prices and margin can differ from what would happen in a live account, and results in paper trading do not predict live results. This is not financial advice.
 
 ## Troubleshooting
 
@@ -116,6 +177,8 @@ The data directory holds the token file (non-macOS, or with `STORE=file`) and `t
   - On macOS, delete the Keychain items with service `ibkr-mcp-guard` (Keychain Access, or `security delete-generic-password -s ibkr-mcp-guard -a https://api.ibkr.com/v1/api/mcp-public`).
   - Elsewhere, delete the data directory.
 - **Logs.** The server logs to stderr only. stdout carries MCP JSON-RPC.
+- **Paper mode refuses every submit.** Run `ibkr_status`. *"This sign-in can see non-paper (live) account(s)"* means you signed in with a live login: sign out and sign in with your paper login. *"No account ids could be read"* means IBKR's account tools did not return any account id, so the guard cannot confirm that only paper accounts are visible.
+- **"You need to sign in again" after changing paper mode.** This is expected: a sign-in made in one mode is not used in the other.
 - **Why Node's `fetch`?** `api.ibkr.com` asks for an *optional* TLS client certificate. Chromium-based HTTP stacks treat that as fatal, but Node's `fetch` handles it.
 
 ## How it works
@@ -149,6 +212,7 @@ The tests cover:
 - discovery using IBKR's real metadata strings
 - the DCR body, PKCE (RFC 7636 test vector), state mismatch, and the scope assertion
 - policy classification of the real tool names
+- paper mode: the default path never asking for `mcp.orders.submit`, the paper scopes, mode changes needing a new sign-in, the DU/DF gate (live ids, unknown ids, accounts named in the order), tool visibility and `list_changed`, Approve/Cancel, `NO_CONFIRM`, the audit log and status
 - tools/list filtering and the draft prefix
 - the signed-out call and the 401 refresh
 - SSE parsing

@@ -9,8 +9,12 @@
 //   read   everything else.
 //
 // The classification is by name first (conservative), so a server cannot unblock a tool by annotating it read-only.
+//
+// In opt-in paper mode (paper.mjs) the guard may list the block class with PAPER_PREFIX instead, but only while the
+// session is verified to reach paper accounts alone; each call is still gated on a fresh account check.
 
 export const DRAFT_PREFIX = 'Creates/changes an order DRAFT (order instruction) only — nothing is sent to the market; you approve drafts inside IBKR.';
+export const PAPER_PREFIX = 'PAPER ACCOUNT ONLY — submits a simulated order to your IBKR paper account (DU…). Refused for live accounts.';
 
 const SUBMIT_SCOPE = /orders?\.submit/i;
 const SUBMIT_VERBS = new Set(['place', 'submit', 'transmit', 'execute', 'send']);
@@ -56,11 +60,14 @@ export function classify(tool) {
   return 'read';
 }
 
-/** The tool as the guard lists it: description prefix and annotations set by class. */
+/** The tool as the guard lists it: description prefix and annotations set by class ('paper' = a paper-mode submit). */
 export function decorate(tool, cls = classify(tool)) {
   const annotations = { ...(tool.annotations && typeof tool.annotations === 'object' ? tool.annotations : {}) };
   let description = typeof tool.description === 'string' ? tool.description : '';
-  if (cls === 'draft') {
+  if (cls === 'paper') {
+    description = PAPER_PREFIX + (description ? '\n\n' + description : '');
+    Object.assign(annotations, { readOnlyHint: false, destructiveHint: true });
+  } else if (cls === 'draft') {
     description = DRAFT_PREFIX + (description ? '\n\n' + description : '');
     Object.assign(annotations, { readOnlyHint: false, destructiveHint: true });
   } else if (cls === 'write') {
@@ -73,13 +80,19 @@ export function decorate(tool, cls = classify(tool)) {
   return out;
 }
 
-/** The upstream tools the guard exposes: blocked ones removed; with readOnly, drafts and writes removed too. */
-export function visibleTools(tools, { readOnly = false } = {}) {
+/**
+ * The upstream tools the guard exposes: blocked ones removed; with readOnly, drafts and writes removed too.
+ * paperSubmit (paper mode, session verified paper-only, never with readOnly) lists the blocked ones as paper submits.
+ */
+export function visibleTools(tools, { readOnly = false, paperSubmit = false } = {}) {
   const out = [];
   for (const t of Array.isArray(tools) ? tools : []) {
     if (!t || typeof t.name !== 'string') continue;
     const cls = classify(t);
-    if (cls === 'block') continue;
+    if (cls === 'block') {
+      if (paperSubmit && !readOnly) out.push(decorate(t, 'paper'));
+      continue;
+    }
     if (readOnly && cls !== 'read') continue;
     out.push(decorate(t, cls));
   }

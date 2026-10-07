@@ -66,9 +66,9 @@ export function memoryStore(initial = null) {
 
 /**
  * A fake upstream MCP server over real HTTP on 127.0.0.1 (Streamable HTTP, JSON or SSE answers).
- * opts: {token, tools, sse, onCall}
+ * opts: {token, tools, sse, scope (granted on sign-in), onCall}
  */
-export async function startFakeUpstream({ token = 'test-access-token', tools, sse = false, onCall = () => ({ content: [{ type: 'text', text: 'ok' }] }) } = {}) {
+export async function startFakeUpstream({ token = 'test-access-token', tools, sse = false, scope = 'openid account-ids mcp.read mcp.write', onCall = () => ({ content: [{ type: 'text', text: 'ok' }] }) } = {}) {
   const calls = [];
   const auth = { registrations: [], tokenRequests: [] };
   const server = http.createServer((req, res) => {
@@ -87,7 +87,7 @@ export async function startFakeUpstream({ token = 'test-access-token', tools, ss
       if (req.method === 'POST' && u.pathname === '/token') {
         const p = Object.fromEntries(new URLSearchParams(body));
         auth.tokenRequests.push(p);
-        return out(200, { access_token: token, refresh_token: 'test-refresh', expires_in: 3600, token_type: 'Bearer', scope: 'openid account-ids mcp.read mcp.write' });
+        return out(200, { access_token: token, refresh_token: 'test-refresh', expires_in: 3600, token_type: 'Bearer', scope });
       }
       if (req.method === 'POST' && u.pathname === '/revoke') return out(200, {});
       if (req.method !== 'POST' || u.pathname !== '/mcp') { res.writeHead(404); res.end(); return; }

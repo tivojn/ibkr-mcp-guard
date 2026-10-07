@@ -27,6 +27,10 @@ if (major < 20) { log('Node.js 20 or newer is required (found ' + process.versio
 const upstreamUrl = env.IBKR_MCP_GUARD_UPSTREAM || IBKR_MCP_URL;
 if (upstreamUrl !== IBKR_MCP_URL) log('using a non-default upstream (IBKR_MCP_GUARD_UPSTREAM): ' + upstreamUrl);
 const readOnly = truthy(env.IBKR_MCP_GUARD_READONLY);
+// Opt-in paper mode: also requests mcp.orders.submit; submits only reach IBKR paper (DU…/DF…) accounts. See README.
+// IBKR_MCP_GUARD_READONLY=1 wins: paper mode is then off and order submission is not requested.
+const paper = truthy(env.IBKR_MCP_GUARD_PAPER) && !readOnly;
+const paperNoConfirm = paper && truthy(env.IBKR_MCP_GUARD_PAPER_NO_CONFIRM);
 const dir = dataDir(env);
 const store = createStore({ account: upstreamUrl, env });
 
@@ -34,6 +38,7 @@ const auth = createAuth({
   serverUrl: upstreamUrl,
   store,
   clientName: 'ibkr-mcp-guard',
+  paper,
   openUrl: truthy(env.IBKR_MCP_GUARD_NO_BROWSER) ? async () => { throw new Error('browser disabled'); } : url => openBrowser(url),
 });
 const client = createClient({ url: upstreamUrl, getToken: o => auth.token(o), clientInfo: { name: 'ibkr-mcp-guard', version } });
@@ -43,9 +48,10 @@ const server = createStdioServer({
   handler: m => guard.handle(m),
   onClose: () => { auth.cancel(); process.stdout.write('', () => process.exit(0)); },
 });
-guard = createGuard({ upstreamUrl, auth, client, dataDir: dir, readOnly, version, peer: server, log, storeKind: store.kind });
+guard = createGuard({ upstreamUrl, auth, client, dataDir: dir, readOnly, version, peer: server, log, storeKind: store.kind, paper, paperNoConfirm });
 
 process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));
 process.on('unhandledRejection', e => log('unhandled: ' + (e?.message || e)));
-log('ready (v' + version + (readOnly ? ', read-only' : '') + ', storage: ' + store.kind + ')');
+if (truthy(env.IBKR_MCP_GUARD_PAPER) && readOnly) log('IBKR_MCP_GUARD_READONLY=1 overrides IBKR_MCP_GUARD_PAPER=1: paper mode is off');
+log('ready (v' + version + (readOnly ? ', read-only' : '') + (paper ? ', PAPER mode' + (paperNoConfirm ? ' (no confirmation prompt)' : '') : '') + ', storage: ' + store.kind + ')');

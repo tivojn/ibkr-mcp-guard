@@ -11,6 +11,11 @@
 //              sign-out, then forgotten (the client registration is kept).
 //
 // Scopes are fixed: SCOPES. assertScopes() throws if mcp.orders.submit (or any *orders.submit) is ever asked for.
+// The single exception is opt-in PAPER MODE (IBKR_MCP_GUARD_PAPER=1): createAuth({paper: true}) asks for PAPER_SCOPES
+// (SCOPES + mcp.orders.submit) and is the only caller that passes assertScopes(..., {paper: true}). The guard then only
+// lets orders through when every account the sign-in can see is a paper account (see paper.mjs).
+// Each token remembers the scopes it was requested with; a token from the other mode counts as signed out, so changing
+// modes always needs a fresh sign-in. The client registration also remembers its scopes and is redone on a change.
 // Nothing here logs, and no error or status carries a token, code or verifier.
 
 import { anySignal } from './signal.mjs';
@@ -21,19 +26,28 @@ import nodeHttp from 'node:http';
 export const IBKR_MCP_URL = 'https://api.ibkr.com/v1/api/mcp-public';
 export const SCOPES = Object.freeze(['openid', 'account-ids', 'mcp.read', 'mcp.write']);
 export const FORBIDDEN_SCOPES = Object.freeze(['mcp.orders.submit']);
+export const PAPER_SCOPES = Object.freeze([...SCOPES, 'mcp.orders.submit']);
 export const LOGIN_MS = 10 * 60 * 1000;
 export const CALLBACK_PATH = '/callback';
 const SUBMIT = /orders?\.submit/i;
 
-/** Throws if a forbidden scope is in the list; returns the list. */
-export function assertScopes(scopes) {
+/**
+ * Throws if a forbidden scope is in the list; returns the list. Only the paper-mode code path passes {paper: true},
+ * which allows exactly 'mcp.orders.submit' (any other *orders.submit spelling still throws).
+ */
+export function assertScopes(scopes, { paper = false } = {}) {
   const list = (Array.isArray(scopes) ? scopes : String(scopes || '').split(/\s+/)).filter(Boolean);
   for (const s of list) {
-    if (FORBIDDEN_SCOPES.includes(s) || SUBMIT.test(s)) throw new Error('Refusing to request scope ' + s + ': ibkr-mcp-guard never asks for order submission.');
+    if (paper === true && s === 'mcp.orders.submit') continue;
+    if (FORBIDDEN_SCOPES.includes(s) || SUBMIT.test(s)) throw new Error('Refusing to request scope ' + s + ': ibkr-mcp-guard never asks for order submission (outside paper mode).');
   }
   return list;
 }
 assertScopes(SCOPES);
+
+const scopeKey = v => [...new Set(String(Array.isArray(v) ? v.join(' ') : v || '').split(/\s+/).filter(Boolean))].sort().join(' ');
+/** Do two scope lists (arrays or space-separated) name the same set? */
+export const sameScopes = (a, b) => scopeKey(a) === scopeKey(b);
 
 /** 'Bearer resource_metadata="…", scope="…"' -> {scheme, params} */
 export function parseWwwAuthenticate(value) {
@@ -132,7 +146,7 @@ export function pkce() {
 }
 
 /** The RFC 7591 registration body: a public native client for exactly this redirect. */
-export function registrationBody({ redirectUri, clientName = 'ibkr-mcp-guard', scopes = SCOPES }) {
+export function registrationBody({ redirectUri, clientName = 'ibkr-mcp-guard', scopes = SCOPES, paper = false }) {
   return {
     client_name: clientName,
     redirect_uris: [redirectUri],
@@ -140,18 +154,21 @@ export function registrationBody({ redirectUri, clientName = 'ibkr-mcp-guard', s
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
     application_type: 'native',
-    scope: assertScopes(scopes).join(' '),
+    scope: assertScopes(scopes, { paper }).join(' '),
   };
 }
 
-export function authorizeUrl({ as, clientId, redirectUri, scopes = SCOPES, state, challenge, resource }) {
+export function authorizeUrl({ as, clientId, redirectUri, scopes = SCOPES, state, challenge, resource, paper = false }) {
   const u = new URL(as.authorization_endpoint);
-  const params = { response_type: 'code', client_id: clientId, redirect_uri: redirectUri, scope: assertScopes(scopes).join(' '), state, code_challenge: challenge, code_challenge_method: 'S256', resource };
+  const params = { response_type: 'code', client_id: clientId, redirect_uri: redirectUri, scope: assertScopes(scopes, { paper }).join(' '), state, code_challenge: challenge, code_challenge_method: 'S256', resource };
   for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
   return u.href;
 }
 
-/** A token answer as kept: {access, refresh, expires, scope, idClaims}. A missing lifetime counts as one hour. */
+/**
+ * A token answer as kept: {access, refresh, expires, scope, scopeReported, requested, idClaims}. A missing lifetime
+ * counts as one hour. `requested` is the scope list this token was asked for (it tells the two modes apart).
+ */
 export function tokenRecord(data, previous = {}, now = Date.now(), requested = SCOPES) {
   if (!data || typeof data.access_token !== 'string' || !data.access_token || data.access_token.length > 131072) throw new Error('Sign-in did not return a valid access token.');
   if (data.token_type && String(data.token_type).toLowerCase() !== 'bearer') throw new Error('Sign-in returned an unsupported token type.');
@@ -163,6 +180,8 @@ export function tokenRecord(data, previous = {}, now = Date.now(), requested = S
     refresh,
     expires: now + life * 1000,
     scope: typeof data.scope === 'string' ? data.scope : previous.scope || requested.join(' '),
+    scopeReported: typeof data.scope === 'string' || Boolean(previous.scopeReported),
+    requested: requested.join(' '),
     idClaims: typeof data.id_token === 'string' ? claims(data.id_token) : previous.idClaims || null,
   };
 }
@@ -230,7 +249,8 @@ export function openBrowser(url, { platform = process.platform, spawnImpl = spaw
 const PAGE = (title, body) => `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui,sans-serif;max-width:36em;margin:4em auto;padding:0 1em"><h1>${title}</h1><p>${body}</p></body>`;
 
 /**
- * createAuth({serverUrl, store, fetchImpl, openUrl, http, now, onChange, clientName, loginMs})
+ * createAuth({serverUrl, store, fetchImpl, openUrl, http, now, onChange, clientName, loginMs, paper})
+ *   paper  true only in paper mode: requests PAPER_SCOPES (SCOPES + mcp.orders.submit).
  * -> {start, cancel, token, signOut, status, flow}
  */
 export function createAuth(o) {
@@ -245,7 +265,13 @@ export function createAuth(o) {
     clientName = 'ibkr-mcp-guard',
     loginMs = LOGIN_MS,
   } = o;
-  const scopes = assertScopes(o.scopes || SCOPES);
+  const paper = o.paper === true;
+  const scopes = paper ? assertScopes(PAPER_SCOPES, { paper: true }) : assertScopes(o.scopes || SCOPES);
+  const mode = paper ? 'paper' : 'default';
+  // Tokens saved before 0.2.0 carry no `requested`; they were always requested with SCOPES.
+  const tokenScopes = t => t?.requested || SCOPES.join(' ');
+  const tokenMode = t => (t ? (String(tokenScopes(t)).split(/\s+/).some(s => SUBMIT.test(s)) ? 'paper' : 'default') : null);
+  const otherMode = t => Boolean(t?.access) && !sameScopes(tokenScopes(t), scopes);
   let cache; // the stored record, read once
   let flow = null; // the sign-in in progress
   let state = { state: 'idle' };
@@ -292,12 +318,12 @@ export function createAuth(o) {
     if (!endpoint) throw new Error('Interactive Brokers does not offer app registration.');
     let r;
     try {
-      r = await fetchImpl(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(registrationBody({ redirectUri, clientName, scopes })), redirect: 'error', signal });
+      r = await fetchImpl(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(registrationBody({ redirectUri, clientName, scopes, paper })), redirect: 'error', signal });
     } catch { throw new Error('Could not reach the Interactive Brokers sign-in service.'); }
     let data = {};
     try { data = await r.json(); } catch {}
     if (!r.ok || typeof data.client_id !== 'string' || !data.client_id) throw new Error('Registering with Interactive Brokers failed (HTTP ' + r.status + ').');
-    return { client_id: data.client_id, redirect_uri: redirectUri, issuer: d.issuer, registered_at: now() };
+    return { client_id: data.client_id, redirect_uri: redirectUri, issuer: d.issuer, scope: scopes.join(' '), registered_at: now() };
   }
 
   async function userinfo(d, access) {
@@ -338,7 +364,8 @@ export function createAuth(o) {
       const saved = load(true);
       const { verifier, challenge } = pkce();
       const st = crypto.randomBytes(32).toString('hex');
-      let client = saved.client && saved.client.issuer === d.issuer ? saved.client : null;
+      // A registration made for the other mode's scopes is replaced.
+      let client = saved.client && saved.client.issuer === d.issuer && sameScopes(saved.client.scope || SCOPES, scopes) ? saved.client : null;
 
       // Listen on the registered redirect's port first; if it is taken, an ephemeral port and a new registration.
       const callbackHandler = (req, res) => void callback(req, res);
@@ -389,7 +416,7 @@ export function createAuth(o) {
         }
       }
 
-      mine.url = authorizeUrl({ as: d.as, clientId: client.client_id, redirectUri, scopes, state: st, challenge, resource: d.resource });
+      mine.url = authorizeUrl({ as: d.as, clientId: client.client_id, redirectUri, scopes, state: st, challenge, resource: d.resource, paper });
       set({ state: 'waiting' });
       try { await openUrl(mine.url); } catch { mine.browserFailed = true; }
       return { state: 'waiting', url: mine.url, done: mine.done, browserFailed: Boolean(mine.browserFailed) };
@@ -400,18 +427,21 @@ export function createAuth(o) {
     return mine.ready;
   }
 
-  /** The access token: refreshed when within a minute of expiry or when force is set; '' when not signed in. */
+  /**
+   * The access token: refreshed when within a minute of expiry or when force is set; '' when not signed in, or when
+   * the saved token was requested for the other mode (paper vs default): changing modes needs a fresh sign-in.
+   */
   async function token({ force = false } = {}) {
     let saved = load();
-    if (!saved.tokens?.access) {
+    if (!saved.tokens?.access || otherMode(saved.tokens)) {
       saved = load(true); // another process may have signed in
-      if (!saved.tokens?.access) return '';
+      if (!saved.tokens?.access || otherMode(saved.tokens)) return '';
     }
     if (!force && saved.tokens.expires > now() + 60000) return saved.tokens.access;
     // Another process sharing this store may already have refreshed (and rotated the refresh token).
     const used = saved.tokens.access;
     saved = load(true);
-    if (!saved.tokens?.access) return '';
+    if (!saved.tokens?.access || otherMode(saved.tokens)) return '';
     if (saved.tokens.access !== used && saved.tokens.expires > now() + 60000) return saved.tokens.access;
     if (!saved.tokens.refresh) { save({ client: saved.client }); return ''; }
     if (refreshing) return refreshing;
@@ -458,19 +488,24 @@ export function createAuth(o) {
     const saved = load(true);
     const t = saved.tokens;
     const granted = t ? String(t.scope || '').split(/\s+/).filter(Boolean) : [];
+    const mismatch = otherMode(t);
     return {
-      signedIn: Boolean(t?.access) && (t.expires > now() || Boolean(t.refresh)),
+      signedIn: Boolean(t?.access) && !mismatch && (t.expires > now() || Boolean(t.refresh)),
+      mode,
+      tokenMode: t?.access ? tokenMode(t) : null,
+      modeMismatch: mismatch,
       flow: state.state,
       ...(state.error ? { lastError: state.error } : {}),
       accountIds: t ? saved.accountIds || [] : [],
       scopesGranted: granted,
       scopesRequested: [...scopes],
       orderSubmissionGranted: granted.some(s => SUBMIT.test(s)),
+      scopesReportedByIbkr: Boolean(t?.scopeReported),
       expiresAt: t ? new Date(t.expires).toISOString() : null,
       renewable: Boolean(t?.refresh),
       clientRegistered: Boolean(saved.client?.client_id),
     };
   }
 
-  return { start, cancel, token, signOut, status, waiting: () => Boolean(flow?.url), scopes: () => [...scopes] };
+  return { start, cancel, token, signOut, status, waiting: () => Boolean(flow?.url), scopes: () => [...scopes], paper };
 }
