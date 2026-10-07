@@ -32,7 +32,9 @@ const readOnly = truthy(env.IBKR_MCP_GUARD_READONLY);
 const paper = truthy(env.IBKR_MCP_GUARD_PAPER) && !readOnly;
 const paperNoConfirm = paper && truthy(env.IBKR_MCP_GUARD_PAPER_NO_CONFIRM);
 const dir = dataDir(env);
-const store = createStore({ account: upstreamUrl, env });
+// Paper mode keeps its own sign-in (a separate Keychain item / file), so the normal and paper plugins can both be
+// installed: each keeps the sign-in made for its own mode.
+const store = createStore({ account: upstreamUrl + (paper ? '#paper' : ''), env });
 
 const auth = createAuth({
   serverUrl: upstreamUrl,
