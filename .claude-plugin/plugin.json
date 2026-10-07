@@ -1,0 +1,12 @@
+{
+  "name": "ibkr-mcp-guard",
+  "version": "0.1.0",
+  "description": "Interactive Brokers (unofficial, guarded): read your IBKR account and market data and create order drafts through IBKR's official MCP server. Never submits orders.",
+  "author": {
+    "name": "Adam Cohen"
+  },
+  "homepage": "https://github.com/tivojn/ibkr-mcp-guard",
+  "repository": "https://github.com/tivojn/ibkr-mcp-guard",
+  "license": "MIT",
+  "keywords": ["ibkr", "interactive-brokers", "finance", "mcp"]
+}

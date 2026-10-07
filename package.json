@@ -1,0 +1,45 @@
+{
+  "name": "ibkr-mcp-guard",
+  "version": "0.1.0",
+  "description": "Unofficial local MCP server that connects to Interactive Brokers' official MCP server through a safety guard: read-only plus order drafts, never order submission.",
+  "type": "module",
+  "bin": {
+    "ibkr-mcp-guard": "server/index.mjs"
+  },
+  "main": "server/index.mjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "server/",
+    ".mcp.json",
+    ".claude-plugin/",
+    ".codex-plugin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "interactive-brokers",
+    "ibkr",
+    "claude-code",
+    "codex",
+    "enconvo",
+    "plugin"
+  ],
+  "author": "Adam Cohen",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tivojn/ibkr-mcp-guard.git"
+  },
+  "homepage": "https://github.com/tivojn/ibkr-mcp-guard#readme",
+  "bugs": {
+    "url": "https://github.com/tivojn/ibkr-mcp-guard/issues"
+  }
+}

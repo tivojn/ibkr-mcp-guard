@@ -1,0 +1,19 @@
+{
+  "name": "ibkr-mcp-guard",
+  "description": "Marketplace for the ibkr-mcp-guard plugin.",
+  "owner": {
+    "name": "Adam Cohen"
+  },
+  "plugins": [
+    {
+      "name": "ibkr-mcp-guard",
+      "description": "Interactive Brokers (unofficial, guarded): read-only account and market data plus order drafts. Never submits orders.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Adam Cohen"
+      },
+      "source": "./",
+      "category": "finance"
+    }
+  ]
+}

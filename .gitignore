@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+*.log
+.DS_Store
+# local sign-in data (never commit)
+auth-*.json
+*.tmp
+tokens*.json
+tools-cache.json
