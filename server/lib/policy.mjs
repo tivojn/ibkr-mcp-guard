@@ -6,7 +6,8 @@
 //   draft  order instructions (IBKR's order DRAFTS): listed with a warning prefix and destructiveHint; a draft only
 //          becomes an order when you approve it yourself inside IBKR.
 //   write  changes something harmless in your account: alerts, watchlists, feedback (and any other mutating verb).
-//   read   everything else.
+//   read   names that start with a read verb (get_, search_, list_, ...) and IBKR's known research tools
+//          (company_*, theme_*, whats_new). Anything else unrecognised is treated as block: fail safe.
 //
 // The classification is by name first (conservative), so a server cannot unblock a tool by annotating it read-only.
 //
@@ -23,6 +24,7 @@ const LIVE_ORDER_CHANGE = new Set(['modify', 'cancel', 'replace', 'update', 'cre
 const READ_VERBS = new Set(['get', 'search', 'list', 'find', 'lookup', 'query', 'fetch', 'describe', 'show', 'whats', 'read', 'check']);
 const MUTATE = new Set(['create', 'add', 'delete', 'remove', 'update', 'set', 'edit', 'modify', 'rename', 'provide', 'save', 'toggle', 'enable', 'disable', 'clear', 'reset', 'post', 'put', 'patch', 'move', 'cancel', 'replace', 'change', 'write', 'upload']);
 
+const KNOWN_READ = /^(company|theme|themes|whats)_|^whats_?new$/;
 const words = name => String(name || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
 /**
@@ -57,7 +59,11 @@ export function classify(tool) {
   if (w.some(x => MUTATE.has(x))) return 'write';
   if (/alert|watchlist|feedback/.test(n) && !READ_VERBS.has(w[0])) return 'write';
   if (typeof tool === 'object' && tool?.annotations?.readOnlyHint === false) return 'write';
-  return 'read';
+  // IBKR's research tools whose names don't start with a read verb.
+  if (KNOWN_READ.test(n)) return 'read';
+  // Fail safe: a name we can't place is treated like an order tool (hidden by default; in paper mode only callable
+  // through the paper-account gate), so a submit tool with an unexpected name can never pass as a plain read.
+  return 'block';
 }
 
 /** The tool as the guard lists it: description prefix and annotations set by class ('paper' = a paper-mode submit). */

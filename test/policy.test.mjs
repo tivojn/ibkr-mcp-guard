@@ -80,3 +80,8 @@ test('paperSubmit lists blocked tools as paper submits; read-only and the defaul
   assert.ok(!visibleTools(tools).some(t => t.name === 'place_order'));
   assert.ok(!visibleTools(tools, { paperSubmit: true, readOnly: true }).some(t => t.name === 'place_order'));
 });
+
+test('unrecognised tool names fail safe as order tools; IBKR research tools stay readable', () => {
+  for (const n of ['company_themes', 'company_connections', 'theme_details', 'whats_new', 'search_investment_topics', 'get_account_summary']) assert.equal(classify(n), 'read', n);
+  for (const n of ['stage_trade_ticket', 'preview_order', 'route_ticket', 'go']) assert.equal(classify(n), 'block', n);
+});
