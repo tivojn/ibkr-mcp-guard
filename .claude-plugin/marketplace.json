@@ -1,13 +1,13 @@
 {
-  "name": "ibkr-mcp-guard",
+  "name": "ibkr-mcp-guard-paper",
   "description": "Marketplace for the ibkr-mcp-guard plugin.",
   "owner": {
     "name": "Adam Cohen"
   },
   "plugins": [
     {
-      "name": "ibkr-mcp-guard",
-      "description": "Interactive Brokers (unofficial, guarded): read-only account and market data plus order drafts. Never submits orders to live accounts (opt-in paper-trading mode for IBKR paper accounts).",
+      "name": "ibkr-mcp-guard-paper",
+      "description": "IBKR PAPER trading (unofficial, guarded): simulated orders on IBKR paper accounts (DU\u2026) only; live accounts refused.",
       "version": "0.2.0",
       "author": {
         "name": "Adam Cohen"

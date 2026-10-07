@@ -1,5 +1,8 @@
 # ibkr-mcp-guard
 
+> **This is the `paper` branch:** the same plugin with paper mode switched on (`IBKR_MCP_GUARD_PAPER=1` in `.mcp.json`), named `ibkr-mcp-guard-paper`, for hosts that can't set environment variables (e.g. EnConvo). Install URL: `https://github.com/tivojn/ibkr-mcp-guard/tree/paper`. Sign in with your IBKR **paper** login. For the normal (read + drafts only) plugin use the `main` branch.
+
+
 **IBKR (guarded)**: a small local MCP server that lets your AI assistant use **Interactive Brokers' official MCP server** through a safety guard. The assistant can read your account and market data and create order **drafts**. It can never send an order to the market.
 
 An opt-in [paper trading mode](#paper-trading-mode) lets the assistant submit orders to an IBKR **paper** (simulated) account, so you can test strategies. Live accounts can never receive orders.

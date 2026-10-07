@@ -1,7 +1,7 @@
 {
-  "name": "ibkr-mcp-guard",
+  "name": "ibkr-mcp-guard-paper",
   "version": "0.2.0",
-  "description": "Unofficial guarded connector to Interactive Brokers' official MCP server: read accounts, positions and market data, manage alerts and watchlists, and create order drafts. Never submits orders to live accounts (opt-in paper-trading mode for IBKR paper accounts only).",
+  "description": "IBKR PAPER trading (unofficial, guarded): read, order drafts, and simulated orders on IBKR paper accounts (DU\u2026) only. Refuses any live account.",
   "author": {
     "name": "Adam Cohen",
     "url": "https://github.com/tivojn"
@@ -9,15 +9,25 @@
   "homepage": "https://github.com/tivojn/ibkr-mcp-guard",
   "repository": "https://github.com/tivojn/ibkr-mcp-guard",
   "license": "MIT",
-  "keywords": ["ibkr", "interactive-brokers", "finance", "trading", "mcp"],
+  "keywords": [
+    "ibkr",
+    "interactive-brokers",
+    "finance",
+    "trading",
+    "mcp"
+  ],
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "IBKR (guarded)",
-    "shortDescription": "Read your IBKR account and draft orders — never submits",
+    "displayName": "IBKR Paper (guarded)",
+    "shortDescription": "Paper trading on IBKR (DU accounts only)",
     "longDescription": "Connects to Interactive Brokers' official MCP server through a local safety guard. You sign in once in your browser. Your assistant can then read balances, positions, orders, trades, quotes, price history, option chains and research, manage alerts and watchlists, and create order drafts (order instructions) that you review and approve yourself inside IBKR. Tools that place, submit or transmit orders are removed, and the order-submission permission is never requested. Tokens stay on your computer (macOS Keychain or a private file). An opt-in paper trading mode (IBKR_MCP_GUARD_PAPER=1) can submit orders to IBKR paper accounts only, checked before every order. Unofficial; not affiliated with Interactive Brokers. Not financial advice.",
     "developerName": "Adam Cohen",
     "category": "Finance",
-    "capabilities": ["Interactive", "Read", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://github.com/tivojn/ibkr-mcp-guard",
     "defaultPrompt": [
       "Sign in to IBKR",

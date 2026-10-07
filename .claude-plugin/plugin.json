@@ -1,12 +1,17 @@
 {
-  "name": "ibkr-mcp-guard",
+  "name": "ibkr-mcp-guard-paper",
   "version": "0.2.0",
-  "description": "Interactive Brokers (unofficial, guarded): read your IBKR account and market data and create order drafts through IBKR's official MCP server. Never submits orders to live accounts; an opt-in paper-trading mode submits to IBKR paper accounts only.",
+  "description": "IBKR PAPER trading (unofficial, guarded): read, order drafts, and simulated orders on IBKR paper accounts (DU\u2026) only. Refuses any live account.",
   "author": {
     "name": "Adam Cohen"
   },
   "homepage": "https://github.com/tivojn/ibkr-mcp-guard",
   "repository": "https://github.com/tivojn/ibkr-mcp-guard",
   "license": "MIT",
-  "keywords": ["ibkr", "interactive-brokers", "finance", "mcp"]
+  "keywords": [
+    "ibkr",
+    "interactive-brokers",
+    "finance",
+    "mcp"
+  ]
 }

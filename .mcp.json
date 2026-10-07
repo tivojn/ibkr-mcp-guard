@@ -1,8 +1,13 @@
 {
   "mcpServers": {
-    "ibkr": {
+    "ibkr-paper": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/index.mjs"]
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/index.mjs"
+      ],
+      "env": {
+        "IBKR_MCP_GUARD_PAPER": "1"
+      }
     }
   }
 }
